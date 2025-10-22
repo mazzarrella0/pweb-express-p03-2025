@@ -1,0 +1,11 @@
+/*
+  Warnings:
+
+  - Added the required column `price` to the `order_items` table without a default value. This is not possible if the table is not empty.
+
+*/
+-- AlterTable
+ALTER TABLE "order_items" ADD COLUMN     "price" DECIMAL(10,2) NOT NULL;
+
+-- AlterTable
+ALTER TABLE "orders" ADD COLUMN     "total_price" DECIMAL(10,2) NOT NULL DEFAULT 0;

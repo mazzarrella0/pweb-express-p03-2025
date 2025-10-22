@@ -6,7 +6,6 @@ export const createGenre = async (req: Request, res: Response) => {
   try {
     const { name }: CreateGenreRequest = req.body;
 
-    // Validasi input
     if (!name) {
       return res.status(400).json({
         success: false,
@@ -14,7 +13,6 @@ export const createGenre = async (req: Request, res: Response) => {
       });
     }
 
-    // Validasi format name
     if (name.trim().length === 0) {
       return res.status(400).json({
         success: false,
@@ -29,7 +27,6 @@ export const createGenre = async (req: Request, res: Response) => {
       });
     }
 
-    // Cek duplikasi name (hanya yang aktif)
     const existingGenre = await prisma.genre.findFirst({
       where: { 
         name,
@@ -58,7 +55,6 @@ export const createGenre = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('CreateGenre error:', error);
     
-    // Handle Prisma unique constraint violation
     if (error.code === 'P2002') {
       return res.status(400).json({
         success: false,
@@ -162,7 +158,6 @@ export const updateGenre = async (req: Request, res: Response) => {
     const { genre_id } = req.params;
     const { name }: UpdateGenreRequest = req.body;
 
-    // Validasi input
     if (!name) {
       return res.status(400).json({
         success: false,
@@ -170,7 +165,6 @@ export const updateGenre = async (req: Request, res: Response) => {
       });
     }
 
-    // Validasi format name
     if (name.trim().length === 0) {
       return res.status(400).json({
         success: false,
@@ -199,7 +193,6 @@ export const updateGenre = async (req: Request, res: Response) => {
       });
     }
 
-    // Cek duplikasi name jika name diupdate
     if (name && name !== genre.name) {
       const existingGenre = await prisma.genre.findFirst({
         where: { 
@@ -229,7 +222,6 @@ export const updateGenre = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('UpdateGenre error:', error);
     
-    // Handle Prisma unique constraint violation
     if (error.code === 'P2002') {
       return res.status(400).json({
         success: false,
@@ -262,7 +254,6 @@ export const deleteGenre = async (req: Request, res: Response) => {
       });
     }
 
-    // Soft delete genre (buku tidak ikut terhapus sesuai requirement)
     await prisma.genre.update({
       where: { id: genre_id },
       data: {

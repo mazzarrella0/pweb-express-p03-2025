@@ -2,15 +2,10 @@ import { Response } from 'express';
 import prisma from '../config/database';
 import { AuthRequest, CreateTransactionRequest } from '../types';
 
-interface GenreTransactionData {
-  count: number;
-  name: string;
-}
-
 interface GenreStat {
   genreId: string;
   genreName: string;
-  transactionCount: number;
+  bookSalesCount: number;
 }
 
 export const createTransaction = async (req: AuthRequest, res: Response) => {
@@ -22,7 +17,6 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
     console.log('Received user_id:', userId);
     console.log('Received items:', JSON.stringify(items, null, 2));
 
-    // Validasi user_id
     if (!userId) {
       return res.status(400).json({
         success: false,
@@ -30,7 +24,6 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // Validasi items
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({
         success: false,
@@ -38,7 +31,6 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // Validasi setiap item
     for (const item of items) {
       if (!item.book_id || !item.quantity || typeof item.quantity !== 'number' || item.quantity <= 0) {
         return res.status(400).json({
@@ -55,7 +47,6 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
       }
     }
 
-    // Cek duplikasi book_id
     const book_ids = items.map((item: { book_id: string; quantity: number }) => item.book_id);
     const uniquebook_ids = new Set(book_ids);
     if (uniquebook_ids.size !== book_ids.length) {
@@ -67,7 +58,6 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
 
     console.log('Book IDs to find:', book_ids);
 
-    // Validasi user existence
     const user = await prisma.user.findUnique({
       where: { id: userId }
     });
@@ -81,13 +71,6 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
 
     console.log('User found:', user.id);
 
-    // Test: Coba query tanpa WHERE clause dulu
-    const testAllBooks = await prisma.book.findMany({
-      take: 5
-    });
-    console.log('Sample books in DB:', testAllBooks.map(b => ({ id: b.id, title: b.title })));
-
-    // Cek books - PERBAIKAN: Pastikan query yang benar
     const books = await prisma.book.findMany({
       where: {
         id: { in: book_ids },
@@ -99,12 +82,6 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
     });
 
     console.log('Books found:', books.length);
-    console.log('Books details:', books.map(b => ({ 
-      id: b.id, 
-      title: b.title, 
-      stock: b.stock_quantity,
-      deleted_at: b.deleted_at 
-    })));
 
     if (books.length !== book_ids.length) {
       const foundBookIds = books.map(b => b.id);
@@ -123,9 +100,10 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // Validasi stock
+    const bookMap = new Map(books.map(b => [b.id, b]));
+
     for (const item of items) {
-      const book = books.find((b: any) => b.id === item.book_id);
+      const book = bookMap.get(item.book_id);
       if (!book) {
         return res.status(404).json({
           success: false,
@@ -143,39 +121,44 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
 
     console.log('All validations passed. Creating transaction...');
 
-    // Create transaction
-    const order = await prisma.$transaction(async (tx: any) => {
+    const order = await prisma.$transaction(async (tx) => {
+      console.time('transaction');
+      
       let totalPrice = 0;
-
-      const newOrder = await tx.order.create({
-        data: {
-          user_id: userId,
-          total_price: 0
-        }
-      });
-
-      console.log('Order created:', newOrder.id);
+      const orderItemsData = [];
 
       for (const item of items) {
-        const book = books.find((b: any) => b.id === item.book_id);
-        
-        if (!book) {
-          throw new Error(`Book not found: ${item.book_id}`);
-        }
-        
+        const book = bookMap.get(item.book_id)!;
         const itemPrice = book.price.toNumber() * item.quantity;
         totalPrice += itemPrice;
 
-        await tx.orderItem.create({
-          data: {
-            order_id: newOrder.id,
-            book_id: item.book_id,
-            quantity: item.quantity,
-            price: book.price
-          }
+        orderItemsData.push({
+          book_id: item.book_id,
+          quantity: item.quantity,
+          price: book.price
         });
+      }
 
-        await tx.book.update({
+      console.time('create-order');
+      const newOrder = await tx.order.create({
+        data: {
+          user_id: userId,
+          total_price: totalPrice,
+          order_items: {
+            create: orderItemsData
+          }
+        },
+        include: {
+          order_items: true
+        }
+      });
+      console.timeEnd('create-order');
+
+      console.log('Order created:', newOrder.id);
+
+      console.time('update-stocks');
+      const stockUpdates = items.map(item => {
+        return tx.book.update({
           where: { id: item.book_id },
           data: {
             stock_quantity: {
@@ -183,18 +166,13 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
             }
           }
         });
-
-        console.log(`Added item: ${book.title} x${item.quantity}`);
-      }
-
-      await tx.order.update({
-        where: { id: newOrder.id },
-        data: { total_price: totalPrice }
       });
 
-      console.log('Total price updated:', totalPrice);
+      await Promise.all(stockUpdates);
+      console.timeEnd('update-stocks');
 
-      return tx.order.findUnique({
+      console.time('fetch-result');
+      const result = await tx.order.findUnique({
         where: { id: newOrder.id },
         include: {
           order_items: {
@@ -215,6 +193,13 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
           }
         }
       });
+      console.timeEnd('fetch-result');
+
+      console.timeEnd('transaction');
+      return result;
+    }, {
+      maxWait: 10000,
+      timeout: 15000,
     });
 
     console.log('Transaction completed successfully!');
@@ -338,7 +323,7 @@ export const getTransactionDetail = async (req: AuthRequest, res: Response) => {
     });
 
     if (!transaction) {
-      return res.status(404).json({
+      return res.status(400).json({
         success: false,
         message: 'Transaction not found'
       });
@@ -360,86 +345,96 @@ export const getTransactionDetail = async (req: AuthRequest, res: Response) => {
 
 export const getTransactionStatistics = async (req: AuthRequest, res: Response) => {
   try {
-    const orders = await prisma.order.findMany({
-      include: {
-        order_items: {
-          include: {
-            book: {
-              include: {
-                genre: true
-              }
-            }
-          }
-        }
-      }
-    });
+    console.log('Fetching transaction statistics...');
+    const [orderStats, orderItems, books] = await Promise.all([
+      prisma.order.aggregate({
+        _count: { id: true },
+        _sum: { total_price: true },
+      }),
+      prisma.orderItem.groupBy({
+        by: ['book_id'],
+        _sum: { quantity: true },
+      }),
+      prisma.book.findMany({
+        where: {
+          deleted_at: null,
+        },
+        select: {
+          id: true,
+          genre: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      }),
+    ]);
 
-    const totalTransactions = orders.length;
+    console.log('Order Stats:', orderStats);
+    console.log('Order Items:', orderItems);
+    console.log('Books:', books);
 
-    let totalAmount = 0;
-    const genreTransactionCount: Record<string, GenreTransactionData> = {};
-
-    orders.forEach((order: any) => {
-      const genresInOrder = new Set<string>();
-      
-      order.order_items.forEach((item: any) => {
-        const itemTotal = item.book.price.toNumber() * item.quantity;
-        totalAmount += itemTotal;
-
-        const genreId = item.book.genre_id;
-        genresInOrder.add(genreId);
-      });
-      
-      genresInOrder.forEach((genreId) => {
-        const orderItem = order.order_items.find((item: any) => item.book.genre_id === genreId);
-        
-        if (orderItem && orderItem.book && orderItem.book.genre) {
-          const genreName = orderItem.book.genre.name;
-          
-          if (!genreTransactionCount[genreId]) {
-            genreTransactionCount[genreId] = { count: 0, name: genreName };
-          }
-          genreTransactionCount[genreId].count += 1;
-        }
-      });
-    });
-
+    const totalTransactions = orderStats._count.id;
+    const totalAmount = orderStats._sum.total_price?.toNumber() || 0;
     const averageTransactionAmount = totalTransactions > 0 ? totalAmount / totalTransactions : 0;
 
-    const genreStats: GenreStat[] = Object.entries(genreTransactionCount).map(([id, data]: [string, GenreTransactionData]) => ({
-      genreId: id,
-      genreName: data.name,
-      transactionCount: data.count
-    }));
+    const bookGenreMap = new Map(
+      books.map((book) => [
+        book.id,
+        book.genre ? { genreId: book.genre.id, genreName: book.genre.name } : null,
+      ])
+    );
 
-    genreStats.sort((a: GenreStat, b: GenreStat) => b.transactionCount - a.transactionCount);
+    const genreSalesMap: Record<string, { name: string; salesCount: number }> = {};
 
-    const mostTransactedGenre = genreStats.length > 0 ? genreStats[0] : null;
-    const leastTransactedGenre = genreStats.length > 0 ? genreStats[genreStats.length - 1] : null;
+    orderItems.forEach((item) => {
+      const bookId = item.book_id;
+      const salesCount = item._sum.quantity || 0;
+      const genre = bookGenreMap.get(bookId);
 
-    return res.status(200).json({
-      success: true,
-      message: 'Transaction statistics retrieved successfully',
-      data: {
-        totalTransactions,
-        averageTransactionAmount: parseFloat(averageTransactionAmount.toFixed(2)),
-        mostTransactedGenre: mostTransactedGenre ? {
-          genreId: mostTransactedGenre.genreId,
-          genreName: mostTransactedGenre.genreName,
-          transactionCount: mostTransactedGenre.transactionCount
-        } : null,
-        leastTransactedGenre: leastTransactedGenre ? {
-          genreId: leastTransactedGenre.genreId,
-          genreName: leastTransactedGenre.genreName,
-          transactionCount: leastTransactedGenre.transactionCount
-        } : null
+      if (genre) {
+        const { genreId, genreName } = genre;
+        if (!genreSalesMap[genreId]) {
+          genreSalesMap[genreId] = { name: genreName, salesCount: 0 };
+        }
+        genreSalesMap[genreId].salesCount += salesCount;
       }
     });
+
+    console.log('Genre Sales Map:', genreSalesMap);
+
+    const genreStats: GenreStat[] = Object.entries(genreSalesMap).map(([genreId, data]) => ({
+      genreId,
+      genreName: data.name,
+      bookSalesCount: data.salesCount,
+    }));
+
+    genreStats.sort((a, b) => b.bookSalesCount - a.bookSalesCount);
+
+    console.log('Genre Stats:', genreStats);
+
+    const mostSoldGenre = genreStats.length > 0 ? genreStats[0].genreName : null;
+    const fewestSoldGenre = genreStats.length > 1 ? genreStats[genreStats.length - 1].genreName : null;
+
+    const response = {
+      success: true,
+      message: 'Get transactions statistics successfully',
+      data: {
+        total_transactions: totalTransactions,
+        average_transaction_amount: parseFloat(averageTransactionAmount.toFixed(2)),
+        fewest_book_sales_genre: fewestSoldGenre,
+        most_book_sales_genre: mostSoldGenre,
+      },
+    };
+    console.log('Statistics Response:', JSON.stringify(response, null, 2));
+
+    return res.status(200).json(response);
   } catch (error: any) {
     console.error('GetTransactionStatistics error:', error);
     return res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Internal server error',
     });
   }
 };

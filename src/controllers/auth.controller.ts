@@ -8,7 +8,6 @@ export const register = async (req: Request, res: Response) => {
   try {
     const { username, email, password }: RegisterRequest = req.body;
 
-    // Validasi input lengkap
     if (!username || !email || !password) {
       return res.status(400).json({
         success: false,
@@ -16,7 +15,6 @@ export const register = async (req: Request, res: Response) => {
       });
     }
 
-    // Validasi format email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       return res.status(400).json({
@@ -25,7 +23,6 @@ export const register = async (req: Request, res: Response) => {
       });
     }
 
-    // Validasi panjang password
     if (password.length < 6) {
       return res.status(400).json({
         success: false,
@@ -33,7 +30,6 @@ export const register = async (req: Request, res: Response) => {
       });
     }
 
-    // Cek duplikasi email atau username
     const existingUser = await prisma.user.findFirst({
       where: {
         OR: [
@@ -72,7 +68,6 @@ export const register = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('Register error:', error);
     
-    // Handle Prisma unique constraint violation
     if (error.code === 'P2002') {
       return res.status(400).json({
         success: false,
@@ -118,7 +113,6 @@ export const login = async (req: Request, res: Response) => {
       });
     }
 
-    // Guard JWT_SECRET
     if (!process.env.JWT_SECRET) {
       throw new Error('JWT_SECRET is not configured');
     }
