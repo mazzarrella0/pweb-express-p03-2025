@@ -8,21 +8,47 @@ export const register = async (req: Request, res: Response) => {
   try {
     const { username, email, password }: RegisterRequest = req.body;
 
-    if (!email || !password) {
+    // Validasi input lengkap
+    if (!username || !email || !password) {
       return res.status(400).json({
         success: false,
-        message: 'Email and password are required'
+        message: 'Username, email and password are required'
       });
     }
 
-    const existingUser = await prisma.user.findUnique({
-      where: { email }
+    // Validasi format email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid email format'
+      });
+    }
+
+    // Validasi panjang password
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters long'
+      });
+    }
+
+    // Cek duplikasi email atau username
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email },
+          { username }
+        ]
+      }
     });
 
     if (existingUser) {
       return res.status(400).json({
         success: false,
-        message: 'Email already registered'
+        message: existingUser.email === email 
+          ? 'Email already registered' 
+          : 'Username already taken'
       });
     }
 
@@ -43,8 +69,17 @@ export const register = async (req: Request, res: Response) => {
       message: 'User registered successfully',
       data: userWithoutPassword
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Register error:', error);
+    
+    // Handle Prisma unique constraint violation
+    if (error.code === 'P2002') {
+      return res.status(400).json({
+        success: false,
+        message: 'Email or username already exists'
+      });
+    }
+    
     return res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -83,9 +118,14 @@ export const login = async (req: Request, res: Response) => {
       });
     }
 
+    // Guard JWT_SECRET
+    if (!process.env.JWT_SECRET) {
+      throw new Error('JWT_SECRET is not configured');
+    }
+
     const token = jwt.sign(
       { id: user.id, email: user.email },
-      process.env.JWT_SECRET!,
+      process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
 
@@ -101,7 +141,7 @@ export const login = async (req: Request, res: Response) => {
         }
       }
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Login error:', error);
     return res.status(500).json({
       success: false,
@@ -118,8 +158,8 @@ export const getMe = async (req: AuthRequest, res: Response) => {
         id: true,
         username: true,
         email: true,
-        createdAt: true,
-        updatedAt: true
+        created_at: true,
+        updated_at: true
       }
     });
 
@@ -132,9 +172,10 @@ export const getMe = async (req: AuthRequest, res: Response) => {
 
     return res.status(200).json({
       success: true,
+      message: 'User profile retrieved successfully',
       data: user
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('GetMe error:', error);
     return res.status(500).json({
       success: false,

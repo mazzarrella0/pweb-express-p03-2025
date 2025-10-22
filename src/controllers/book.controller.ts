@@ -8,14 +8,14 @@ export const createBook = async (req: Request, res: Response) => {
       title,
       writer,
       publisher,
-      publicationYear,
+      publication_year,
       description,
       price,
-      stockQuantity,
-      genreId
+      stock_quantity,
+      genre_id
     }: CreateBookRequest = req.body;
 
-    if (!title || !writer || !publisher || !publicationYear || !price || stockQuantity === undefined || !genreId) {
+    if (!title || !writer || !publisher || !publication_year || !price || stock_quantity === undefined || !genre_id) {
       return res.status(400).json({
         success: false,
         message: 'All required fields must be provided'
@@ -26,7 +26,7 @@ export const createBook = async (req: Request, res: Response) => {
       where: { title }
     });
 
-    if (existingBook && !existingBook.deletedAt) {
+    if (existingBook && !existingBook.deleted_at) {
       return res.status(400).json({
         success: false,
         message: 'Book with this title already exists'
@@ -34,10 +34,10 @@ export const createBook = async (req: Request, res: Response) => {
     }
 
     const genre = await prisma.genre.findUnique({
-      where: { id: genreId }
+      where: { id: genre_id }
     });
 
-    if (!genre || genre.deletedAt) {
+    if (!genre || genre.deleted_at) {
       return res.status(404).json({
         success: false,
         message: 'Genre not found'
@@ -49,11 +49,11 @@ export const createBook = async (req: Request, res: Response) => {
         title,
         writer,
         publisher,
-        publicationYear,
+        publication_year,
         description,
         price,
-        stockQuantity,
-        genreId
+        stock_quantity,
+        genre_id
       },
       include: {
         genre: true
@@ -91,7 +91,7 @@ export const getAllBooks = async (req: Request, res: Response) => {
     const skip = (pageNum - 1) * limitNum;
 
     const where: any = {
-      deletedAt: null
+      deleted_at: null
     };
 
     if (search) {
@@ -125,7 +125,7 @@ export const getAllBooks = async (req: Request, res: Response) => {
         skip,
         take: limitNum,
         orderBy: {
-          createdAt: 'desc'
+          created_at: 'desc'
         }
       }),
       prisma.book.count({ where })
@@ -157,7 +157,7 @@ export const getBookDetail = async (req: Request, res: Response) => {
     const book = await prisma.book.findFirst({
       where: {
         id: book_id,
-        deletedAt: null
+        deleted_at: null
       },
       include: {
         genre: true
@@ -200,7 +200,7 @@ export const getBooksByGenre = async (req: Request, res: Response) => {
     const genre = await prisma.genre.findFirst({
       where: {
         id: genre_id,
-        deletedAt: null
+        deleted_at: null
       }
     });
 
@@ -216,8 +216,8 @@ export const getBooksByGenre = async (req: Request, res: Response) => {
     const skip = (pageNum - 1) * limitNum;
 
     const where: any = {
-      genreId: genre_id,
-      deletedAt: null
+      genre_id: genre_id,
+      deleted_at: null
     };
 
     if (search) {
@@ -251,7 +251,7 @@ export const getBooksByGenre = async (req: Request, res: Response) => {
         skip,
         take: limitNum,
         orderBy: {
-          createdAt: 'desc'
+          created_at: 'desc'
         }
       }),
       prisma.book.count({ where })
@@ -284,7 +284,7 @@ export const updateBook = async (req: Request, res: Response) => {
     const book = await prisma.book.findFirst({
       where: {
         id: book_id,
-        deletedAt: null
+        deleted_at: null
       }
     });
 
@@ -300,7 +300,7 @@ export const updateBook = async (req: Request, res: Response) => {
         where: { title: updateData.title }
       });
 
-      if (existingBook && !existingBook.deletedAt) {
+      if (existingBook && !existingBook.deleted_at) {
         return res.status(400).json({
           success: false,
           message: 'Book with this title already exists'
@@ -308,11 +308,11 @@ export const updateBook = async (req: Request, res: Response) => {
       }
     }
 
-    if (updateData.genreId) {
+    if (updateData.genre_id) {
       const genre = await prisma.genre.findFirst({
         where: {
-          id: updateData.genreId,
-          deletedAt: null
+          id: updateData.genre_id,
+          deleted_at: null
         }
       });
 
@@ -353,7 +353,7 @@ export const deleteBook = async (req: Request, res: Response) => {
     const book = await prisma.book.findFirst({
       where: {
         id: book_id,
-        deletedAt: null
+        deleted_at: null
       }
     });
 
@@ -367,7 +367,7 @@ export const deleteBook = async (req: Request, res: Response) => {
     await prisma.book.update({
       where: { id: book_id },
       data: {
-        deletedAt: new Date()
+        deleted_at: new Date()
       }
     });
 

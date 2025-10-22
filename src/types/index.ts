@@ -22,22 +22,22 @@ export interface CreateBookRequest {
   title: string;
   writer: string;
   publisher: string;
-  publicationYear: number;
+  publication_year: number;
   description?: string;
   price: number;
-  stockQuantity: number;
-  genreId: string;
+  stock_quantity: number; 
+  genre_id: string;        
 }
 
 export interface UpdateBookRequest {
   title?: string;
   writer?: string;
   publisher?: string;
-  publicationYear?: number;
+  publication_year?: number;
   description?: string;
   price?: number;
-  stockQuantity?: number;
-  genreId?: string;
+  stock_quantity?: number; 
+  genre_id?: string;        
 }
 
 export interface CreateGenreRequest {
@@ -49,8 +49,9 @@ export interface UpdateGenreRequest {
 }
 
 export interface CreateTransactionRequest {
+  user_id: string;
   items: {
-    bookId: string;
+    book_id: string; 
     quantity: number;
   }[];
 }

@@ -6,6 +6,7 @@ export const createGenre = async (req: Request, res: Response) => {
   try {
     const { name }: CreateGenreRequest = req.body;
 
+    // Validasi input
     if (!name) {
       return res.status(400).json({
         success: false,
@@ -13,11 +14,30 @@ export const createGenre = async (req: Request, res: Response) => {
       });
     }
 
-    const existingGenre = await prisma.genre.findUnique({
-      where: { name }
+    // Validasi format name
+    if (name.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Genre name cannot be empty'
+      });
+    }
+
+    if (name.length > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Genre name is too long (max 100 characters)'
+      });
+    }
+
+    // Cek duplikasi name (hanya yang aktif)
+    const existingGenre = await prisma.genre.findFirst({
+      where: { 
+        name,
+        deleted_at: null
+      }
     });
 
-    if (existingGenre && !existingGenre.deletedAt) {
+    if (existingGenre) {
       return res.status(400).json({
         success: false,
         message: 'Genre with this name already exists'
@@ -25,7 +45,9 @@ export const createGenre = async (req: Request, res: Response) => {
     }
 
     const genre = await prisma.genre.create({
-      data: { name }
+      data: { 
+        name
+      }
     });
 
     return res.status(201).json({
@@ -33,8 +55,17 @@ export const createGenre = async (req: Request, res: Response) => {
       message: 'Genre created successfully',
       data: genre
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('CreateGenre error:', error);
+    
+    // Handle Prisma unique constraint violation
+    if (error.code === 'P2002') {
+      return res.status(400).json({
+        success: false,
+        message: 'Genre with this name already exists'
+      });
+    }
+    
     return res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -46,18 +77,30 @@ export const getAllGenres = async (req: Request, res: Response) => {
   try {
     const genres = await prisma.genre.findMany({
       where: {
-        deletedAt: null
+        deleted_at: null
+      },
+      include: {
+        _count: {
+          select: {
+            books: {
+              where: {
+                deleted_at: null
+              }
+            }
+          }
+        }
       },
       orderBy: {
-        createdAt: 'desc'
+        created_at: 'desc'
       }
     });
 
     return res.status(200).json({
       success: true,
+      message: 'Genres retrieved successfully',
       data: genres
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('GetAllGenres error:', error);
     return res.status(500).json({
       success: false,
@@ -73,7 +116,23 @@ export const getGenreDetail = async (req: Request, res: Response) => {
     const genre = await prisma.genre.findFirst({
       where: {
         id: genre_id,
-        deletedAt: null
+        deleted_at: null
+      },
+      include: {
+        books: {
+          where: {
+            deleted_at: null
+          }
+        },
+        _count: {
+          select: {
+            books: {
+              where: {
+                deleted_at: null
+              }
+            }
+          }
+        }
       }
     });
 
@@ -86,9 +145,10 @@ export const getGenreDetail = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       success: true,
+      message: 'Genre retrieved successfully',
       data: genre
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('GetGenreDetail error:', error);
     return res.status(500).json({
       success: false,
@@ -102,10 +162,33 @@ export const updateGenre = async (req: Request, res: Response) => {
     const { genre_id } = req.params;
     const { name }: UpdateGenreRequest = req.body;
 
+    // Validasi input
+    if (!name) {
+      return res.status(400).json({
+        success: false,
+        message: 'Genre name is required'
+      });
+    }
+
+    // Validasi format name
+    if (name.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Genre name cannot be empty'
+      });
+    }
+
+    if (name.length > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Genre name is too long (max 100 characters)'
+      });
+    }
+
     const genre = await prisma.genre.findFirst({
       where: {
         id: genre_id,
-        deletedAt: null
+        deleted_at: null
       }
     });
 
@@ -116,12 +199,16 @@ export const updateGenre = async (req: Request, res: Response) => {
       });
     }
 
+    // Cek duplikasi name jika name diupdate
     if (name && name !== genre.name) {
-      const existingGenre = await prisma.genre.findUnique({
-        where: { name }
+      const existingGenre = await prisma.genre.findFirst({
+        where: { 
+          name,
+          deleted_at: null
+        }
       });
 
-      if (existingGenre && !existingGenre.deletedAt) {
+      if (existingGenre) {
         return res.status(400).json({
           success: false,
           message: 'Genre with this name already exists'
@@ -139,8 +226,17 @@ export const updateGenre = async (req: Request, res: Response) => {
       message: 'Genre updated successfully',
       data: updatedGenre
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('UpdateGenre error:', error);
+    
+    // Handle Prisma unique constraint violation
+    if (error.code === 'P2002') {
+      return res.status(400).json({
+        success: false,
+        message: 'Genre with this name already exists'
+      });
+    }
+    
     return res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -155,7 +251,7 @@ export const deleteGenre = async (req: Request, res: Response) => {
     const genre = await prisma.genre.findFirst({
       where: {
         id: genre_id,
-        deletedAt: null
+        deleted_at: null
       }
     });
 
@@ -166,10 +262,11 @@ export const deleteGenre = async (req: Request, res: Response) => {
       });
     }
 
+    // Soft delete genre (buku tidak ikut terhapus sesuai requirement)
     await prisma.genre.update({
       where: { id: genre_id },
       data: {
-        deletedAt: new Date()
+        deleted_at: new Date()
       }
     });
 
@@ -177,7 +274,7 @@ export const deleteGenre = async (req: Request, res: Response) => {
       success: true,
       message: 'Genre deleted successfully'
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('DeleteGenre error:', error);
     return res.status(500).json({
       success: false,

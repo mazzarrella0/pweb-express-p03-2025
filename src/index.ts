@@ -13,6 +13,7 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Root endpoint
 app.get('/', (req, res) => {
   res.json({
     success: true,
@@ -20,11 +21,22 @@ app.get('/', (req, res) => {
   });
 });
 
+// Health check endpoint
+app.get('/health-check', (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'Server is healthy',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Routes
 app.use('/auth', authRoutes);
 app.use('/books', bookRoutes);
 app.use('/genre', genreRoutes);
 app.use('/transactions', transactionRoutes);
 
+// 404 handler
 app.use((req, res) => {
   res.status(404).json({
     success: false,
