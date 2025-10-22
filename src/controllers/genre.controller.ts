@@ -77,29 +77,44 @@ export const getAllGenres = async (req: Request, res: Response) => {
   try {
     const {
       page = '1',
-      limit = '10'
+      limit = '10',
+      search,
+      orderByName
     } = req.query;
 
     const pageNum = parseInt(page as string);
     const limitNum = parseInt(limit as string);
     const skip = (pageNum - 1) * limitNum;
 
+    const where: any = {
+      deleted_at: null
+    };
+
+    if (search) {
+      where.name = {
+        contains: search as string,
+        mode: 'insensitive'
+      };
+    }
+
+    const orderBy: any = [];
+    
+    if (orderByName) {
+      orderBy.push({ name: orderByName as string });
+    }
+    
+    if (orderBy.length === 0) {
+      orderBy.push({ created_at: 'desc' });
+    }
+
     const [genres, total] = await Promise.all([
       prisma.genre.findMany({
-        where: {
-          deleted_at: null
-        },
+        where,
         skip,
         take: limitNum,
-        orderBy: {
-          created_at: 'desc'
-        }
+        orderBy
       }),
-      prisma.genre.count({
-        where: {
-          deleted_at: null
-        }
-      })
+      prisma.genre.count({ where })
     ]);
 
     const formattedGenres = genres.map(genre => ({

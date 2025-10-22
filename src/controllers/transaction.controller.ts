@@ -209,7 +209,11 @@ export const getAllTransactions = async (req: AuthRequest, res: Response) => {
   try {
     const {
       page = '1',
-      limit = '10'
+      limit = '10',
+      search,
+      orderById,
+      orderByAmount,
+      orderByPrice
     } = req.query;
 
     const pageNum = parseInt(page as string);
@@ -231,8 +235,47 @@ export const getAllTransactions = async (req: AuthRequest, res: Response) => {
 
     const skip = (pageNum - 1) * limitNum;
 
+    const where: any = {};
+
+    if (search) {
+      where.OR = [
+        { id: { contains: search as string, mode: 'insensitive' } },
+        {
+          order_items: {
+            some: {
+              book: {
+                title: { contains: search as string, mode: 'insensitive' }
+              }
+            }
+          }
+        }
+      ];
+    }
+
+    const orderBy: any = [];
+
+    // Only apply database-level sorting if NOT sorting by amount (total_quantity)
+    const sortByAmount = orderByAmount as string | undefined;
+
+    if (orderById && !sortByAmount) {
+      orderBy.push({ id: orderById as string });
+    }
+
+    if (orderByPrice && !sortByAmount) {
+      orderBy.push({ total_price: orderByPrice as string });
+    }
+
+    if (orderBy.length === 0 && !sortByAmount) {
+      orderBy.push({ created_at: 'desc' });
+    }
+
+    // Fetch all data without pagination if sorting by amount
+    const fetchLimit = sortByAmount ? undefined : limitNum;
+    const fetchSkip = sortByAmount ? undefined : skip;
+
     const [transactions, total] = await Promise.all([
       prisma.order.findMany({
+        where,
         include: {
           order_items: {
             include: {
@@ -240,24 +283,37 @@ export const getAllTransactions = async (req: AuthRequest, res: Response) => {
             }
           }
         },
-        skip,
-        take: limitNum,
-        orderBy: {
-          created_at: 'desc'
-        }
+        skip: fetchSkip,
+        take: fetchLimit,
+        orderBy: orderBy.length > 0 ? orderBy : undefined
       }),
-      prisma.order.count()
+      prisma.order.count({ where })
     ]);
 
-    const formattedTransactions = transactions.map(transaction => {
+    let formattedTransactions = transactions.map(transaction => {
       const totalQuantity = transaction.order_items.reduce((sum, item) => sum + item.quantity, 0);
       
       return {
         id: transaction.id,
         total_quantity: totalQuantity,
-        total_price: transaction.total_price.toNumber()
+        total_price: transaction.total_price.toNumber(),
+        created_at: transaction.created_at
       };
     });
+
+    // Sort by total_quantity in memory if orderByAmount is specified
+    if (sortByAmount) {
+      formattedTransactions.sort((a, b) => {
+        if (sortByAmount === 'asc') {
+          return a.total_quantity - b.total_quantity;
+        } else {
+          return b.total_quantity - a.total_quantity;
+        }
+      });
+
+      // Apply pagination after sorting
+      formattedTransactions = formattedTransactions.slice(skip, skip + limitNum);
+    }
 
     const totalPages = Math.ceil(total / limitNum);
 
@@ -268,6 +324,8 @@ export const getAllTransactions = async (req: AuthRequest, res: Response) => {
       meta: {
         page: pageNum,
         limit: limitNum,
+        total,
+        total_pages: totalPages,
         prev_page: pageNum > 1 ? pageNum - 1 : null,
         next_page: pageNum < totalPages ? pageNum + 1 : null
       }
@@ -359,10 +417,6 @@ export const getTransactionStatistics = async (req: AuthRequest, res: Response) 
       }),
     ]);
 
-    console.log('Order Stats:', orderStats);
-    console.log('Order Items:', orderItems);
-    console.log('Books:', books);
-
     const totalTransactions = orderStats._count.id;
     const totalAmount = orderStats._sum.total_price?.toNumber() || 0;
     const averageTransactionAmount = totalTransactions > 0 ? totalAmount / totalTransactions : 0;
@@ -390,8 +444,6 @@ export const getTransactionStatistics = async (req: AuthRequest, res: Response) 
       }
     });
 
-    console.log('Genre Sales Map:', genreSalesMap);
-
     const genreStats: GenreStat[] = Object.entries(genreSalesMap).map(([genreId, data]) => ({
       genreId,
       genreName: data.name,
@@ -399,8 +451,6 @@ export const getTransactionStatistics = async (req: AuthRequest, res: Response) 
     }));
 
     genreStats.sort((a, b) => b.bookSalesCount - a.bookSalesCount);
-
-    console.log('Genre Stats:', genreStats);
 
     const mostSoldGenre = genreStats.length > 0 ? genreStats[0].genreName : null;
     const fewestSoldGenre = genreStats.length > 1 ? genreStats[genreStats.length - 1].genreName : null;
@@ -415,7 +465,6 @@ export const getTransactionStatistics = async (req: AuthRequest, res: Response) 
         most_book_sales_genre: mostSoldGenre,
       },
     };
-    console.log('Statistics Response:', JSON.stringify(response, null, 2));
 
     return res.status(200).json(response);
   } catch (error: any) {

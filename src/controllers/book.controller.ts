@@ -2,6 +2,17 @@ import { Request, Response } from 'express';
 import prisma from '../config/database';
 import { CreateBookRequest, UpdateBookRequest } from '../types';
 
+// Helper function to calculate condition based on publication year
+const calculateCondition = (publication_year: number): string => {
+  const yearDiff = new Date().getFullYear() - publication_year;
+  if (yearDiff <= 1) return 'NEW';
+  else if (yearDiff <= 2) return 'LIKE_NEW';
+  else if (yearDiff <= 3) return 'VERY_GOOD';
+  else if (yearDiff <= 5) return 'GOOD';
+  else if (yearDiff <= 8) return 'ACCEPTABLE';
+  else return 'POOR';
+};
+
 export const createBook = async (req: Request, res: Response) => {
   try {
     const {
@@ -84,7 +95,9 @@ export const getAllBooks = async (req: Request, res: Response) => {
       writer,
       publisher,
       minPrice,
-      maxPrice
+      maxPrice,
+      orderByTitle,
+      orderByPublishDate
     } = req.query;
 
     const pageNum = parseInt(page as string);
@@ -117,6 +130,20 @@ export const getAllBooks = async (req: Request, res: Response) => {
       if (maxPrice) where.price.lte = parseFloat(maxPrice as string);
     }
 
+    const orderBy: any = [];
+    
+    if (orderByTitle) {
+      orderBy.push({ title: orderByTitle as string });
+    }
+    
+    if (orderByPublishDate) {
+      orderBy.push({ publication_year: orderByPublishDate as string });
+    }
+    
+    if (orderBy.length === 0) {
+      orderBy.push({ created_at: 'desc' });
+    }
+
     const [books, total] = await Promise.all([
       prisma.book.findMany({
         where,
@@ -125,9 +152,7 @@ export const getAllBooks = async (req: Request, res: Response) => {
         },
         skip,
         take: limitNum,
-        orderBy: {
-          created_at: 'desc'
-        }
+        orderBy
       }),
       prisma.book.count({ where })
     ]);
@@ -141,7 +166,8 @@ export const getAllBooks = async (req: Request, res: Response) => {
       publication_year: book.publication_year,
       price: book.price,
       stock_quantity: book.stock_quantity,
-      genre: book.genre.name
+      genre: book.genre.name,
+      condition: calculateCondition(book.publication_year) // Calculate condition
     }));
 
     const totalPages = Math.ceil(total / limitNum);
@@ -199,7 +225,8 @@ export const getBookDetail = async (req: Request, res: Response) => {
         publication_year: book.publication_year,
         price: book.price,
         stock_quantity: book.stock_quantity,
-        genre: book.genre.name
+        genre: book.genre.name,
+        condition: calculateCondition(book.publication_year) // Calculate condition
       }
     });
   } catch (error) {
@@ -221,7 +248,10 @@ export const getBooksByGenre = async (req: Request, res: Response) => {
       writer,
       publisher,
       minPrice,
-      maxPrice
+      maxPrice,
+      orderByTitle,
+      orderByPublishDate,
+      condition
     } = req.query;
 
     const genre = await prisma.genre.findFirst({
@@ -247,6 +277,35 @@ export const getBooksByGenre = async (req: Request, res: Response) => {
       deleted_at: null
     };
 
+    if (condition) {
+      const finalCondition = (condition as string).toUpperCase();
+      let minYear: number | undefined;
+      let maxYear: number | undefined;
+      const currentYear = new Date().getFullYear();
+
+      if (finalCondition === 'NEW') {
+        minYear = currentYear - 1;
+      } else if (finalCondition === 'LIKE_NEW') {
+        minYear = currentYear - 2;
+        maxYear = currentYear - 1;
+      } else if (finalCondition === 'VERY_GOOD') {
+        minYear = currentYear - 3;
+        maxYear = currentYear - 2;
+      } else if (finalCondition === 'GOOD') {
+        minYear = currentYear - 5;
+        maxYear = currentYear - 3;
+      } else if (finalCondition === 'ACCEPTABLE') {
+        minYear = currentYear - 8;
+        maxYear = currentYear - 5;
+      } else if (finalCondition === 'POOR') {
+        maxYear = currentYear - 8;
+      }
+
+      where.publication_year = {};
+      if (minYear !== undefined) where.publication_year.gte = minYear;
+      if (maxYear !== undefined) where.publication_year.lte = maxYear;
+    }
+
     if (search) {
       where.OR = [
         { title: { contains: search as string, mode: 'insensitive' } },
@@ -269,6 +328,20 @@ export const getBooksByGenre = async (req: Request, res: Response) => {
       if (maxPrice) where.price.lte = parseFloat(maxPrice as string);
     }
 
+    const orderBy: any = [];
+    
+    if (orderByTitle) {
+      orderBy.push({ title: orderByTitle as string });
+    }
+    
+    if (orderByPublishDate) {
+      orderBy.push({ publication_year: orderByPublishDate as string });
+    }
+    
+    if (orderBy.length === 0) {
+      orderBy.push({ created_at: 'desc' });
+    }
+
     const [books, total] = await Promise.all([
       prisma.book.findMany({
         where,
@@ -277,9 +350,7 @@ export const getBooksByGenre = async (req: Request, res: Response) => {
         },
         skip,
         take: limitNum,
-        orderBy: {
-          created_at: 'desc'
-        }
+        orderBy
       }),
       prisma.book.count({ where })
     ]);
@@ -290,10 +361,11 @@ export const getBooksByGenre = async (req: Request, res: Response) => {
       writer: book.writer,
       publisher: book.publisher,
       description: book.description,
-      genre: book.genre.name,
       publication_year: book.publication_year,
       price: book.price,
-      stock_quantity: book.stock_quantity
+      stock_quantity: book.stock_quantity,
+      genre: book.genre.name,
+      condition: calculateCondition(book.publication_year) // Calculate condition
     }));
 
     const totalPages = Math.ceil(total / limitNum);
@@ -305,6 +377,8 @@ export const getBooksByGenre = async (req: Request, res: Response) => {
       meta: {
         page: pageNum,
         limit: limitNum,
+        total: total,
+        total_pages: totalPages,
         prev_page: pageNum > 1 ? pageNum - 1 : null,
         next_page: pageNum < totalPages ? pageNum + 1 : null
       }
