@@ -21,10 +21,11 @@ app.get('/', (req, res) => {
 });
 
 app.get('/health-check', (req, res) => {
+  const currentDate = new Date().toDateString();
   res.status(200).json({
     success: true,
-    message: 'Server is healthy',
-    timestamp: new Date().toISOString()
+    message: 'Hello World!',
+    date: currentDate
   });
 });
 

@@ -125,12 +125,14 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
       console.time('transaction');
       
       let totalPrice = 0;
+      let totalQuantity = 0;
       const orderItemsData = [];
 
       for (const item of items) {
         const book = bookMap.get(item.book_id)!;
         const itemPrice = book.price.toNumber() * item.quantity;
         totalPrice += itemPrice;
+        totalQuantity += item.quantity;
 
         orderItemsData.push({
           book_id: item.book_id,
@@ -147,9 +149,6 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
           order_items: {
             create: orderItemsData
           }
-        },
-        include: {
-          order_items: true
         }
       });
       console.timeEnd('create-order');
@@ -171,32 +170,13 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
       await Promise.all(stockUpdates);
       console.timeEnd('update-stocks');
 
-      console.time('fetch-result');
-      const result = await tx.order.findUnique({
-        where: { id: newOrder.id },
-        include: {
-          order_items: {
-            include: {
-              book: {
-                include: {
-                  genre: true
-                }
-              }
-            }
-          },
-          user: {
-            select: {
-              id: true,
-              username: true,
-              email: true
-            }
-          }
-        }
-      });
-      console.timeEnd('fetch-result');
-
       console.timeEnd('transaction');
-      return result;
+      
+      return {
+        id: newOrder.id,
+        totalQuantity,
+        totalPrice
+      };
     }, {
       maxWait: 10000,
       timeout: 15000,
@@ -208,7 +188,11 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
     return res.status(201).json({
       success: true,
       message: 'Transaction created successfully',
-      data: order
+      data: {
+        transaction_id: order.id,
+        total_quantity: order.totalQuantity,
+        total_price: order.totalPrice
+      }
     });
   } catch (error: any) {
     console.error('CreateTransaction error:', error);
@@ -252,18 +236,7 @@ export const getAllTransactions = async (req: AuthRequest, res: Response) => {
         include: {
           order_items: {
             include: {
-              book: {
-                include: {
-                  genre: true
-                }
-              }
-            }
-          },
-          user: {
-            select: {
-              id: true,
-              username: true,
-              email: true
+              book: true
             }
           }
         },
@@ -276,15 +249,27 @@ export const getAllTransactions = async (req: AuthRequest, res: Response) => {
       prisma.order.count()
     ]);
 
+    const formattedTransactions = transactions.map(transaction => {
+      const totalQuantity = transaction.order_items.reduce((sum, item) => sum + item.quantity, 0);
+      
+      return {
+        id: transaction.id,
+        total_quantity: totalQuantity,
+        total_price: transaction.total_price.toNumber()
+      };
+    });
+
+    const totalPages = Math.ceil(total / limitNum);
+
     return res.status(200).json({
       success: true,
-      message: 'Transactions retrieved successfully',
-      data: transactions,
-      pagination: {
+      message: 'Get all transaction successfully',
+      data: formattedTransactions,
+      meta: {
         page: pageNum,
         limit: limitNum,
-        total,
-        totalPages: Math.ceil(total / limitNum)
+        prev_page: pageNum > 1 ? pageNum - 1 : null,
+        next_page: pageNum < totalPages ? pageNum + 1 : null
       }
     });
   } catch (error: any) {
@@ -305,34 +290,37 @@ export const getTransactionDetail = async (req: AuthRequest, res: Response) => {
       include: {
         order_items: {
           include: {
-            book: {
-              include: {
-                genre: true
-              }
-            }
-          }
-        },
-        user: {
-          select: {
-            id: true,
-            username: true,
-            email: true
+            book: true
           }
         }
       }
     });
 
     if (!transaction) {
-      return res.status(400).json({
+      return res.status(404).json({
         success: false,
         message: 'Transaction not found'
       });
     }
 
+    const items = transaction.order_items.map(item => ({
+      book_id: item.book_id,
+      book_title: item.book.title,
+      quantity: item.quantity,
+      subtotal_price: item.price.toNumber() * item.quantity
+    }));
+
+    const totalQuantity = transaction.order_items.reduce((sum, item) => sum + item.quantity, 0);
+
     return res.status(200).json({
       success: true,
-      message: 'Transaction retrieved successfully',
-      data: transaction
+      message: 'Get transaction detail successfully',
+      data: {
+        id: transaction.id,
+        items: items,
+        total_quantity: totalQuantity,
+        total_price: transaction.total_price.toNumber()
+      }
     });
   } catch (error: any) {
     console.error('GetTransactionDetail error:', error);

@@ -58,12 +58,14 @@ export const register = async (req: Request, res: Response) => {
       }
     });
 
-    const { password: _, ...userWithoutPassword } = user;
-
     return res.status(201).json({
       success: true,
       message: 'User registered successfully',
-      data: userWithoutPassword
+      data: {
+        id: user.id,
+        email: user.email,
+        created_at: user.created_at
+      }
     });
   } catch (error: any) {
     console.error('Register error:', error);
@@ -100,7 +102,7 @@ export const login = async (req: Request, res: Response) => {
     if (!user) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid email or password'
+        message: 'Invalid credentials'
       });
     }
 
@@ -109,7 +111,7 @@ export const login = async (req: Request, res: Response) => {
     if (!isPasswordValid) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid email or password'
+        message: 'Invalid credentials'
       });
     }
 
@@ -125,14 +127,9 @@ export const login = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       success: true,
-      message: 'Login successful',
+      message: 'Login successfully',
       data: {
-        token,
-        user: {
-          id: user.id,
-          username: user.username,
-          email: user.email
-        }
+        access_token: token
       }
     });
   } catch (error: any) {
@@ -151,9 +148,7 @@ export const getMe = async (req: AuthRequest, res: Response) => {
       select: {
         id: true,
         username: true,
-        email: true,
-        created_at: true,
-        updated_at: true
+        email: true
       }
     });
 
@@ -166,8 +161,12 @@ export const getMe = async (req: AuthRequest, res: Response) => {
 
     return res.status(200).json({
       success: true,
-      message: 'User profile retrieved successfully',
-      data: user
+      message: 'Get me successfully',
+      data: {
+        id: user.id,
+        username: user.username,
+        email: user.email
+      }
     });
   } catch (error: any) {
     console.error('GetMe error:', error);

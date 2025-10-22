@@ -54,16 +54,17 @@ export const createBook = async (req: Request, res: Response) => {
         price,
         stock_quantity,
         genre_id
-      },
-      include: {
-        genre: true
       }
     });
 
     return res.status(201).json({
       success: true,
-      message: 'Book created successfully',
-      data: book
+      message: 'Book added successfully',
+      data: {
+        id: book.id,
+        title: book.title,
+        created_at: book.created_at
+      }
     });
   } catch (error) {
     console.error('CreateBook error:', error);
@@ -131,14 +132,29 @@ export const getAllBooks = async (req: Request, res: Response) => {
       prisma.book.count({ where })
     ]);
 
+    const formattedBooks = books.map(book => ({
+      id: book.id,
+      title: book.title,
+      writer: book.writer,
+      publisher: book.publisher,
+      description: book.description,
+      publication_year: book.publication_year,
+      price: book.price,
+      stock_quantity: book.stock_quantity,
+      genre: book.genre.name
+    }));
+
+    const totalPages = Math.ceil(total / limitNum);
+
     return res.status(200).json({
       success: true,
-      data: books,
-      pagination: {
+      message: 'Get all book successfully',
+      data: formattedBooks,
+      meta: {
         page: pageNum,
         limit: limitNum,
-        total,
-        totalPages: Math.ceil(total / limitNum)
+        prev_page: pageNum > 1 ? pageNum - 1 : null,
+        next_page: pageNum < totalPages ? pageNum + 1 : null
       }
     });
   } catch (error) {
@@ -173,7 +189,18 @@ export const getBookDetail = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       success: true,
-      data: book
+      message: 'Get book detail successfully',
+      data: {
+        id: book.id,
+        title: book.title,
+        writer: book.writer,
+        publisher: book.publisher,
+        description: book.description,
+        publication_year: book.publication_year,
+        price: book.price,
+        stock_quantity: book.stock_quantity,
+        genre: book.genre.name
+      }
     });
   } catch (error) {
     console.error('GetBookDetail error:', error);
@@ -257,14 +284,29 @@ export const getBooksByGenre = async (req: Request, res: Response) => {
       prisma.book.count({ where })
     ]);
 
+    const formattedBooks = books.map(book => ({
+      id: book.id,
+      title: book.title,
+      writer: book.writer,
+      publisher: book.publisher,
+      description: book.description,
+      genre: book.genre.name,
+      publication_year: book.publication_year,
+      price: book.price,
+      stock_quantity: book.stock_quantity
+    }));
+
+    const totalPages = Math.ceil(total / limitNum);
+
     return res.status(200).json({
       success: true,
-      data: books,
-      pagination: {
+      message: 'Get all book by genre successfully',
+      data: formattedBooks,
+      meta: {
         page: pageNum,
         limit: limitNum,
-        total,
-        totalPages: Math.ceil(total / limitNum)
+        prev_page: pageNum > 1 ? pageNum - 1 : null,
+        next_page: pageNum < totalPages ? pageNum + 1 : null
       }
     });
   } catch (error) {
@@ -326,16 +368,17 @@ export const updateBook = async (req: Request, res: Response) => {
 
     const updatedBook = await prisma.book.update({
       where: { id: book_id },
-      data: updateData,
-      include: {
-        genre: true
-      }
+      data: updateData
     });
 
     return res.status(200).json({
       success: true,
       message: 'Book updated successfully',
-      data: updatedBook
+      data: {
+        id: updatedBook.id,
+        title: updatedBook.title,
+        updated_at: updatedBook.updated_at
+      }
     });
   } catch (error) {
     console.error('UpdateBook error:', error);
@@ -373,7 +416,7 @@ export const deleteBook = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       success: true,
-      message: 'Book deleted successfully'
+      message: 'Book removed successfully'
     });
   } catch (error) {
     console.error('DeleteBook error:', error);

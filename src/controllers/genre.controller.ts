@@ -50,7 +50,11 @@ export const createGenre = async (req: Request, res: Response) => {
     return res.status(201).json({
       success: true,
       message: 'Genre created successfully',
-      data: genre
+      data: {
+        id: genre.id,
+        name: genre.name,
+        created_at: genre.created_at
+      }
     });
   } catch (error: any) {
     console.error('CreateGenre error:', error);
@@ -71,30 +75,50 @@ export const createGenre = async (req: Request, res: Response) => {
 
 export const getAllGenres = async (req: Request, res: Response) => {
   try {
-    const genres = await prisma.genre.findMany({
-      where: {
-        deleted_at: null
-      },
-      include: {
-        _count: {
-          select: {
-            books: {
-              where: {
-                deleted_at: null
-              }
-            }
-          }
+    const {
+      page = '1',
+      limit = '10'
+    } = req.query;
+
+    const pageNum = parseInt(page as string);
+    const limitNum = parseInt(limit as string);
+    const skip = (pageNum - 1) * limitNum;
+
+    const [genres, total] = await Promise.all([
+      prisma.genre.findMany({
+        where: {
+          deleted_at: null
+        },
+        skip,
+        take: limitNum,
+        orderBy: {
+          created_at: 'desc'
         }
-      },
-      orderBy: {
-        created_at: 'desc'
-      }
-    });
+      }),
+      prisma.genre.count({
+        where: {
+          deleted_at: null
+        }
+      })
+    ]);
+
+    const formattedGenres = genres.map(genre => ({
+      id: genre.id,
+      name: genre.name
+    }));
+
+    const totalPages = Math.ceil(total / limitNum);
 
     return res.status(200).json({
       success: true,
-      message: 'Genres retrieved successfully',
-      data: genres
+      message: 'Get all genre successfully',
+      data: formattedGenres,
+      meta: {
+        page: pageNum,
+        limit: limitNum,
+        prev_page: pageNum > 1 ? pageNum - 1 : null,
+        next_page: pageNum < totalPages ? pageNum + 1 : null
+      }
     });
   } catch (error: any) {
     console.error('GetAllGenres error:', error);
@@ -113,22 +137,6 @@ export const getGenreDetail = async (req: Request, res: Response) => {
       where: {
         id: genre_id,
         deleted_at: null
-      },
-      include: {
-        books: {
-          where: {
-            deleted_at: null
-          }
-        },
-        _count: {
-          select: {
-            books: {
-              where: {
-                deleted_at: null
-              }
-            }
-          }
-        }
       }
     });
 
@@ -141,8 +149,11 @@ export const getGenreDetail = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       success: true,
-      message: 'Genre retrieved successfully',
-      data: genre
+      message: 'Get genre detail successfully',
+      data: {
+        id: genre.id,
+        name: genre.name
+      }
     });
   } catch (error: any) {
     console.error('GetGenreDetail error:', error);
@@ -217,7 +228,11 @@ export const updateGenre = async (req: Request, res: Response) => {
     return res.status(200).json({
       success: true,
       message: 'Genre updated successfully',
-      data: updatedGenre
+      data: {
+        id: updatedGenre.id,
+        name: updatedGenre.name,
+        updated_at: updatedGenre.updated_at
+      }
     });
   } catch (error: any) {
     console.error('UpdateGenre error:', error);
@@ -263,7 +278,7 @@ export const deleteGenre = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       success: true,
-      message: 'Genre deleted successfully'
+      message: 'Genre removed successfully'
     });
   } catch (error: any) {
     console.error('DeleteGenre error:', error);
