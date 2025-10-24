@@ -829,11 +829,63 @@ export const updateBook = async (req: Request, res: Response) => {
       }
     }
 
-    const sanitizedData: any = { ...updateData };
-    if (sanitizedData.title) sanitizedData.title = sanitizedData.title.trim();
-    if (sanitizedData.writer) sanitizedData.writer = sanitizedData.writer.trim();
-    if (sanitizedData.publisher) sanitizedData.publisher = sanitizedData.publisher.trim();
-    if (sanitizedData.description) sanitizedData.description = sanitizedData.description.trim();
+    const sanitizedData: any = {};
+    
+    // Only include fields that are actually different from current data
+    if (updateData.title !== undefined) {
+      const trimmedTitle = updateData.title.trim();
+      if (trimmedTitle !== book.title) {
+        sanitizedData.title = trimmedTitle;
+      }
+    }
+    
+    if (updateData.writer !== undefined) {
+      const trimmedWriter = updateData.writer.trim();
+      if (trimmedWriter !== book.writer) {
+        sanitizedData.writer = trimmedWriter;
+      }
+    }
+    
+    if (updateData.publisher !== undefined) {
+      const trimmedPublisher = updateData.publisher.trim();
+      if (trimmedPublisher !== book.publisher) {
+        sanitizedData.publisher = trimmedPublisher;
+      }
+    }
+    
+    if (updateData.description !== undefined) {
+      const trimmedDescription = updateData.description ? updateData.description.trim() : null;
+      if (trimmedDescription !== book.description) {
+        sanitizedData.description = trimmedDescription;
+      }
+    }
+    
+    if (updateData.publication_year !== undefined && updateData.publication_year !== book.publication_year) {
+      sanitizedData.publication_year = updateData.publication_year;
+    }
+    
+    if (updateData.price !== undefined) {
+      const currentPrice = typeof book.price === 'object' ? Number(book.price) : book.price;
+      if (updateData.price !== currentPrice) {
+        sanitizedData.price = updateData.price;
+      }
+    }
+    
+    if (updateData.stock_quantity !== undefined && updateData.stock_quantity !== book.stock_quantity) {
+      sanitizedData.stock_quantity = updateData.stock_quantity;
+    }
+    
+    if (updateData.genre_id !== undefined && updateData.genre_id !== book.genre_id) {
+      sanitizedData.genre_id = updateData.genre_id;
+    }
+
+    // If no fields have changed, return error
+    if (Object.keys(sanitizedData).length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No changes detected. All values are the same as current data'
+      });
+    }
 
     const updatedBook = await prisma.book.update({
       where: { id: book_id },
