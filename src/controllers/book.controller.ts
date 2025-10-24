@@ -2,7 +2,6 @@ import { Request, Response } from 'express';
 import prisma from '../config/database';
 import { CreateBookRequest, UpdateBookRequest } from '../types';
 
-// Helper function to calculate condition based on publication year
 const calculateCondition = (publication_year: number): string => {
   const yearDiff = new Date().getFullYear() - publication_year;
   if (yearDiff <= 1) return 'NEW';
@@ -11,6 +10,82 @@ const calculateCondition = (publication_year: number): string => {
   else if (yearDiff <= 5) return 'GOOD';
   else if (yearDiff <= 8) return 'ACCEPTABLE';
   else return 'POOR';
+};
+
+const validatePublicationYear = (year: number): { valid: boolean; message?: string } => {
+  const currentYear = new Date().getFullYear();
+  
+  if (!Number.isInteger(year)) {
+    return { valid: false, message: 'Publication year must be an integer' };
+  }
+  
+  if (year < 1000) {
+    return { valid: false, message: 'Publication year must be at least 1000' };
+  }
+  
+  if (year > currentYear) {
+    return { valid: false, message: `Publication year cannot be greater than ${currentYear}` };
+  }
+  
+  return { valid: true };
+};
+
+const validatePrice = (price: number): { valid: boolean; message?: string } => {
+  if (typeof price !== 'number' || isNaN(price)) {
+    return { valid: false, message: 'Price must be a valid number' };
+  }
+  
+  if (price < 0) {
+    return { valid: false, message: 'Price cannot be negative' };
+  }
+  
+  if (price === 0) {
+    return { valid: false, message: 'Price must be greater than 0' };
+  }
+  
+  if (price > 999999999) {
+    return { valid: false, message: 'Price is too high' };
+  }
+  
+  return { valid: true };
+};
+
+const validateStockQuantity = (quantity: number): { valid: boolean; message?: string } => {
+  if (typeof quantity !== 'number' || isNaN(quantity)) {
+    return { valid: false, message: 'Stock quantity must be a valid number' };
+  }
+  
+  if (!Number.isInteger(quantity)) {
+    return { valid: false, message: 'Stock quantity must be an integer' };
+  }
+  
+  if (quantity < 0) {
+    return { valid: false, message: 'Stock quantity cannot be negative' };
+  }
+  
+  if (quantity > 1000000) {
+    return { valid: false, message: 'Stock quantity is too high' };
+  }
+  
+  return { valid: true };
+};
+
+const validateString = (value: string, fieldName: string, minLength: number = 1, maxLength: number = 255): { valid: boolean; message?: string } => {
+  if (typeof value !== 'string') {
+    return { valid: false, message: `${fieldName} must be a string` };
+  }
+  
+  const trimmedValue = value.trim();
+  
+  if (trimmedValue.length < minLength) {
+    return { valid: false, message: `${fieldName} must be at least ${minLength} character(s)` };
+  }
+  
+  if (trimmedValue.length > maxLength) {
+    return { valid: false, message: `${fieldName} must not exceed ${maxLength} characters` };
+  }
+  
+  return { valid: true };
 };
 
 export const createBook = async (req: Request, res: Response) => {
@@ -26,15 +101,80 @@ export const createBook = async (req: Request, res: Response) => {
       genre_id
     }: CreateBookRequest = req.body;
 
-    if (!title || !writer || !publisher || !publication_year || !price || stock_quantity === undefined || !genre_id) {
+    if (!title || !writer || !publisher || !publication_year || price === undefined || stock_quantity === undefined || !genre_id) {
       return res.status(400).json({
         success: false,
         message: 'All required fields must be provided'
       });
     }
 
+    const titleValidation = validateString(title, 'Title', 1, 255);
+    if (!titleValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: titleValidation.message
+      });
+    }
+
+    const writerValidation = validateString(writer, 'Writer', 1, 255);
+    if (!writerValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: writerValidation.message
+      });
+    }
+
+    const publisherValidation = validateString(publisher, 'Publisher', 1, 255);
+    if (!publisherValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: publisherValidation.message
+      });
+    }
+
+    if (description !== undefined && description !== null) {
+      const descValidation = validateString(description, 'Description', 0, 2000);
+      if (!descValidation.valid) {
+        return res.status(400).json({
+          success: false,
+          message: descValidation.message
+        });
+      }
+    }
+
+    const yearValidation = validatePublicationYear(publication_year);
+    if (!yearValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: yearValidation.message
+      });
+    }
+
+    const priceValidation = validatePrice(price);
+    if (!priceValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: priceValidation.message
+      });
+    }
+
+    const stockValidation = validateStockQuantity(stock_quantity);
+    if (!stockValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: stockValidation.message
+      });
+    }
+
+    if (typeof genre_id !== 'string' || genre_id.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid genre_id format'
+      });
+    }
+
     const existingBook = await prisma.book.findUnique({
-      where: { title }
+      where: { title: title.trim() }
     });
 
     if (existingBook && !existingBook.deleted_at) {
@@ -57,11 +197,11 @@ export const createBook = async (req: Request, res: Response) => {
 
     const book = await prisma.book.create({
       data: {
-        title,
-        writer,
-        publisher,
+        title: title.trim(),
+        writer: writer.trim(),
+        publisher: publisher.trim(),
         publication_year,
-        description,
+        description: description?.trim() || null,
         price,
         stock_quantity,
         genre_id
@@ -102,6 +242,73 @@ export const getAllBooks = async (req: Request, res: Response) => {
 
     const pageNum = parseInt(page as string);
     const limitNum = parseInt(limit as string);
+
+    if (isNaN(pageNum) || pageNum < 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'Page must be a positive integer'
+      });
+    }
+
+    if (isNaN(limitNum) || limitNum < 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'Limit must be a positive integer'
+      });
+    }
+
+    if (limitNum > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Limit cannot exceed 100'
+      });
+    }
+
+    if (minPrice) {
+      const min = parseFloat(minPrice as string);
+      if (isNaN(min) || min < 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'minPrice must be a non-negative number'
+        });
+      }
+    }
+
+    if (maxPrice) {
+      const max = parseFloat(maxPrice as string);
+      if (isNaN(max) || max < 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'maxPrice must be a non-negative number'
+        });
+      }
+    }
+
+    if (minPrice && maxPrice) {
+      const min = parseFloat(minPrice as string);
+      const max = parseFloat(maxPrice as string);
+      if (min > max) {
+        return res.status(400).json({
+          success: false,
+          message: 'minPrice cannot be greater than maxPrice'
+        });
+      }
+    }
+
+    if (orderByTitle && !['asc', 'desc'].includes(orderByTitle as string)) {
+      return res.status(400).json({
+        success: false,
+        message: 'orderByTitle must be either "asc" or "desc"'
+      });
+    }
+
+    if (orderByPublishDate && !['asc', 'desc'].includes(orderByPublishDate as string)) {
+      return res.status(400).json({
+        success: false,
+        message: 'orderByPublishDate must be either "asc" or "desc"'
+      });
+    }
+
     const skip = (pageNum - 1) * limitNum;
 
     const where: any = {
@@ -167,7 +374,7 @@ export const getAllBooks = async (req: Request, res: Response) => {
       price: book.price,
       stock_quantity: book.stock_quantity,
       genre: book.genre.name,
-      condition: calculateCondition(book.publication_year) // Calculate condition
+      condition: calculateCondition(book.publication_year)
     }));
 
     const totalPages = Math.ceil(total / limitNum);
@@ -179,6 +386,8 @@ export const getAllBooks = async (req: Request, res: Response) => {
       meta: {
         page: pageNum,
         limit: limitNum,
+        total: total,
+        total_pages: totalPages,
         prev_page: pageNum > 1 ? pageNum - 1 : null,
         next_page: pageNum < totalPages ? pageNum + 1 : null
       }
@@ -195,6 +404,13 @@ export const getAllBooks = async (req: Request, res: Response) => {
 export const getBookDetail = async (req: Request, res: Response) => {
   try {
     const { book_id } = req.params;
+
+    if (!book_id || typeof book_id !== 'string' || book_id.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid book_id'
+      });
+    }
 
     const book = await prisma.book.findFirst({
       where: {
@@ -226,7 +442,7 @@ export const getBookDetail = async (req: Request, res: Response) => {
         price: book.price,
         stock_quantity: book.stock_quantity,
         genre: book.genre.name,
-        condition: calculateCondition(book.publication_year) // Calculate condition
+        condition: calculateCondition(book.publication_year)
       }
     });
   } catch (error) {
@@ -254,6 +470,90 @@ export const getBooksByGenre = async (req: Request, res: Response) => {
       condition
     } = req.query;
 
+    if (!genre_id || typeof genre_id !== 'string' || genre_id.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid genre_id'
+      });
+    }
+
+    const pageNum = parseInt(page as string);
+    const limitNum = parseInt(limit as string);
+
+    if (isNaN(pageNum) || pageNum < 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'Page must be a positive integer'
+      });
+    }
+
+    if (isNaN(limitNum) || limitNum < 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'Limit must be a positive integer'
+      });
+    }
+
+    if (limitNum > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Limit cannot exceed 100'
+      });
+    }
+
+    const validConditions = ['NEW', 'LIKE_NEW', 'VERY_GOOD', 'GOOD', 'ACCEPTABLE', 'POOR'];
+    if (condition && !validConditions.includes((condition as string).toUpperCase())) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid condition. Must be one of: ${validConditions.join(', ')}`
+      });
+    }
+
+    if (minPrice) {
+      const min = parseFloat(minPrice as string);
+      if (isNaN(min) || min < 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'minPrice must be a non-negative number'
+        });
+      }
+    }
+
+    if (maxPrice) {
+      const max = parseFloat(maxPrice as string);
+      if (isNaN(max) || max < 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'maxPrice must be a non-negative number'
+        });
+      }
+    }
+
+    if (minPrice && maxPrice) {
+      const min = parseFloat(minPrice as string);
+      const max = parseFloat(maxPrice as string);
+      if (min > max) {
+        return res.status(400).json({
+          success: false,
+          message: 'minPrice cannot be greater than maxPrice'
+        });
+      }
+    }
+
+    if (orderByTitle && !['asc', 'desc'].includes(orderByTitle as string)) {
+      return res.status(400).json({
+        success: false,
+        message: 'orderByTitle must be either "asc" or "desc"'
+      });
+    }
+
+    if (orderByPublishDate && !['asc', 'desc'].includes(orderByPublishDate as string)) {
+      return res.status(400).json({
+        success: false,
+        message: 'orderByPublishDate must be either "asc" or "desc"'
+      });
+    }
+
     const genre = await prisma.genre.findFirst({
       where: {
         id: genre_id,
@@ -268,8 +568,6 @@ export const getBooksByGenre = async (req: Request, res: Response) => {
       });
     }
 
-    const pageNum = parseInt(page as string);
-    const limitNum = parseInt(limit as string);
     const skip = (pageNum - 1) * limitNum;
 
     const where: any = {
@@ -365,7 +663,7 @@ export const getBooksByGenre = async (req: Request, res: Response) => {
       price: book.price,
       stock_quantity: book.stock_quantity,
       genre: book.genre.name,
-      condition: calculateCondition(book.publication_year) // Calculate condition
+      condition: calculateCondition(book.publication_year)
     }));
 
     const totalPages = Math.ceil(total / limitNum);
@@ -397,6 +695,90 @@ export const updateBook = async (req: Request, res: Response) => {
     const { book_id } = req.params;
     const updateData: UpdateBookRequest = req.body;
 
+    if (!book_id || typeof book_id !== 'string' || book_id.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid book_id'
+      });
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No data provided for update'
+      });
+    }
+
+    if (updateData.title !== undefined) {
+      const titleValidation = validateString(updateData.title, 'Title', 1, 255);
+      if (!titleValidation.valid) {
+        return res.status(400).json({
+          success: false,
+          message: titleValidation.message
+        });
+      }
+    }
+
+    if (updateData.writer !== undefined) {
+      const writerValidation = validateString(updateData.writer, 'Writer', 1, 255);
+      if (!writerValidation.valid) {
+        return res.status(400).json({
+          success: false,
+          message: writerValidation.message
+        });
+      }
+    }
+
+    if (updateData.publisher !== undefined) {
+      const publisherValidation = validateString(updateData.publisher, 'Publisher', 1, 255);
+      if (!publisherValidation.valid) {
+        return res.status(400).json({
+          success: false,
+          message: publisherValidation.message
+        });
+      }
+    }
+
+    if (updateData.description !== undefined && updateData.description !== null) {
+      const descValidation = validateString(updateData.description, 'Description', 0, 2000);
+      if (!descValidation.valid) {
+        return res.status(400).json({
+          success: false,
+          message: descValidation.message
+        });
+      }
+    }
+
+    if (updateData.publication_year !== undefined) {
+      const yearValidation = validatePublicationYear(updateData.publication_year);
+      if (!yearValidation.valid) {
+        return res.status(400).json({
+          success: false,
+          message: yearValidation.message
+        });
+      }
+    }
+
+    if (updateData.price !== undefined) {
+      const priceValidation = validatePrice(updateData.price);
+      if (!priceValidation.valid) {
+        return res.status(400).json({
+          success: false,
+          message: priceValidation.message
+        });
+      }
+    }
+
+    if (updateData.stock_quantity !== undefined) {
+      const stockValidation = validateStockQuantity(updateData.stock_quantity);
+      if (!stockValidation.valid) {
+        return res.status(400).json({
+          success: false,
+          message: stockValidation.message
+        });
+      }
+    }
+
     const book = await prisma.book.findFirst({
       where: {
         id: book_id,
@@ -411,9 +793,9 @@ export const updateBook = async (req: Request, res: Response) => {
       });
     }
 
-    if (updateData.title && updateData.title !== book.title) {
+    if (updateData.title && updateData.title.trim() !== book.title) {
       const existingBook = await prisma.book.findUnique({
-        where: { title: updateData.title }
+        where: { title: updateData.title.trim() }
       });
 
       if (existingBook && !existingBook.deleted_at) {
@@ -425,6 +807,13 @@ export const updateBook = async (req: Request, res: Response) => {
     }
 
     if (updateData.genre_id) {
+      if (typeof updateData.genre_id !== 'string' || updateData.genre_id.trim().length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid genre_id format'
+        });
+      }
+
       const genre = await prisma.genre.findFirst({
         where: {
           id: updateData.genre_id,
@@ -440,9 +829,15 @@ export const updateBook = async (req: Request, res: Response) => {
       }
     }
 
+    const sanitizedData: any = { ...updateData };
+    if (sanitizedData.title) sanitizedData.title = sanitizedData.title.trim();
+    if (sanitizedData.writer) sanitizedData.writer = sanitizedData.writer.trim();
+    if (sanitizedData.publisher) sanitizedData.publisher = sanitizedData.publisher.trim();
+    if (sanitizedData.description) sanitizedData.description = sanitizedData.description.trim();
+
     const updatedBook = await prisma.book.update({
       where: { id: book_id },
-      data: updateData
+      data: sanitizedData
     });
 
     return res.status(200).json({
@@ -466,6 +861,13 @@ export const updateBook = async (req: Request, res: Response) => {
 export const deleteBook = async (req: Request, res: Response) => {
   try {
     const { book_id } = req.params;
+
+    if (!book_id || typeof book_id !== 'string' || book_id.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid book_id'
+      });
+    }
 
     const book = await prisma.book.findFirst({
       where: {

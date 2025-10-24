@@ -254,7 +254,6 @@ export const getAllTransactions = async (req: AuthRequest, res: Response) => {
 
     const orderBy: any = [];
 
-    // Only apply database-level sorting if NOT sorting by amount (total_quantity)
     const sortByAmount = orderByAmount as string | undefined;
 
     if (orderById && !sortByAmount) {
@@ -269,7 +268,6 @@ export const getAllTransactions = async (req: AuthRequest, res: Response) => {
       orderBy.push({ created_at: 'desc' });
     }
 
-    // Fetch all data without pagination if sorting by amount
     const fetchLimit = sortByAmount ? undefined : limitNum;
     const fetchSkip = sortByAmount ? undefined : skip;
 
@@ -301,7 +299,6 @@ export const getAllTransactions = async (req: AuthRequest, res: Response) => {
       };
     });
 
-    // Sort by total_quantity in memory if orderByAmount is specified
     if (sortByAmount) {
       formattedTransactions.sort((a, b) => {
         if (sortByAmount === 'asc') {
@@ -311,7 +308,6 @@ export const getAllTransactions = async (req: AuthRequest, res: Response) => {
         }
       });
 
-      // Apply pagination after sorting
       formattedTransactions = formattedTransactions.slice(skip, skip + limitNum);
     }
 
